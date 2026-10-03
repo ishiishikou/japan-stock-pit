@@ -1,0 +1,42 @@
+{
+  "source_id": "boj_timeseries",
+  "endpoint": "https://www.stat-search.boj.or.jp/api/v1/getDataCode",
+  "language": "en",
+  "series": [
+    {
+      "dataset": "call_rate",
+      "db": "FM01",
+      "code": "STRDCLUCON",
+      "start_date": "199801",
+      "label": "Uncollateralized overnight call rate, average, daily"
+    },
+    {
+      "dataset": "usd_jpy",
+      "db": "FM08",
+      "code": "FXERD04",
+      "start_date": "198001",
+      "label": "Tokyo USD/JPY spot, 17:00, daily"
+    },
+    {
+      "dataset": "usd_jpy",
+      "db": "FM08",
+      "code": "FXERD05",
+      "start_date": "198001",
+      "label": "Tokyo USD/JPY spot, central rate, daily"
+    },
+    {
+      "dataset": "effective_fx",
+      "db": "FM09",
+      "code": "FX180110001",
+      "start_date": "197001",
+      "label": "Nominal effective exchange rate index, monthly"
+    },
+    {
+      "dataset": "effective_fx",
+      "db": "FM09",
+      "code": "FX180110002",
+      "start_date": "197001",
+      "label": "Real effective exchange rate index, monthly"
+    }
+  ]
+}
