@@ -1,3 +1,4 @@
+# Trigger note: initial EDINET production run after secret registration.
 name: Collect EDINET Document List PIT
 
 on:
