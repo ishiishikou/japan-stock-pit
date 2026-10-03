@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "description": "Transparent exact-local-name aliases for canonical financial research metrics. Raw EDINET XBRL facts remain the source of truth.",
+  "metrics": {
+    "revenue": [
+      "NetSales",
+      "Revenue",
+      "OperatingRevenue1",
+      "OperatingRevenue",
+      "Sales"
+    ],
+    "operating_income": [
+      "OperatingIncome",
+      "OperatingProfitLoss",
+      "OperatingProfit"
+    ],
+    "ordinary_income": [
+      "OrdinaryIncome"
+    ],
+    "pretax_income": [
+      "IncomeBeforeIncomeTaxes",
+      "ProfitLossBeforeIncomeTaxes"
+    ],
+    "net_income": [
+      "ProfitLoss",
+      "ProfitLossAttributableToOwnersOfParent",
+      "ProfitAttributableToOwnersOfParent"
+    ],
+    "total_assets": [
+      "Assets",
+      "TotalAssets"
+    ],
+    "total_liabilities": [
+      "Liabilities",
+      "TotalLiabilities"
+    ],
+    "net_assets": [
+      "NetAssets",
+      "Equity"
+    ],
+    "shareholders_equity": [
+      "ShareholdersEquity"
+    ],
+    "cash_and_deposits": [
+      "CashAndDeposits",
+      "CashAndCashEquivalents"
+    ],
+    "interest_bearing_debt": [
+      "InterestBearingDebt",
+      "InterestBearingDebtCurrentAndNoncurrent"
+    ],
+    "operating_cash_flow": [
+      "NetCashProvidedByUsedInOperatingActivities"
+    ],
+    "investing_cash_flow": [
+      "NetCashProvidedByUsedInInvestingActivities"
+    ],
+    "financing_cash_flow": [
+      "NetCashProvidedByUsedInFinancingActivities"
+    ],
+    "depreciation": [
+      "DepreciationAndAmortization",
+      "Depreciation"
+    ],
+    "capital_expenditure": [
+      "PurchaseOfPropertyPlantAndEquipmentAndIntangibleAssets",
+      "PurchaseOfPropertyPlantAndEquipment"
+    ],
+    "research_and_development": [
+      "ResearchAndDevelopmentExpenses",
+      "ResearchAndDevelopmentExpensesSGA"
+    ],
+    "eps": [
+      "BasicEarningsLossPerShare",
+      "BasicEarningsPerShare"
+    ],
+    "dividend_per_share": [
+      "DividendPaidPerShare"
+    ],
+    "shares_outstanding": [
+      "TotalNumberOfIssuedSharesSummaryOfBusinessResults",
+      "NumberOfIssuedSharesAsOfFiscalYearEndIssuedSharesTotalNumberOfSharesEtc"
+    ]
+  }
+}
