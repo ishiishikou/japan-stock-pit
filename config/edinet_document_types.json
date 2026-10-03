@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "description": "Research-oriented EDINET document selection. Codes are grouped by research use; unknown codes are not downloaded automatically.",
+  "categories": {
+    "financial": {
+      "codes": ["120", "130", "140", "150", "160", "170"],
+      "description": "Annual, quarterly/semi-annual reports and corrections",
+      "priority": 1,
+      "download_csv": true
+    },
+    "event": {
+      "codes": ["180", "190"],
+      "description": "Extraordinary reports and corrections",
+      "priority": 2,
+      "download_csv": true
+    },
+    "buyback": {
+      "codes": ["220"],
+      "description": "Treasury-share purchase status reports",
+      "priority": 2,
+      "download_csv": true
+    },
+    "tender_offer": {
+      "codes": ["240", "250", "270", "280", "290", "300", "310", "320"],
+      "description": "Tender-offer related filings and corrections",
+      "priority": 2,
+      "download_csv": true
+    },
+    "ownership": {
+      "codes": ["350", "360"],
+      "description": "Large-shareholding reports/change reports and corrections",
+      "priority": 1,
+      "download_csv": true
+    }
+  }
+}
