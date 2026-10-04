@@ -10,6 +10,8 @@ on:
     paths:
       - ".github/workflows/collect-jquants-free.yml"
       - "collectors/jquants_free.py"
+      - "features/jquants_forecast.py"
+      - "features/contracts.py"
       - "requirements-jquants.txt"
 
 permissions:
@@ -33,7 +35,9 @@ jobs:
           python-version: "3.12"
 
       - name: Syntax check
-        run: python -m py_compile collectors/jquants_free.py
+        run: |
+          python -m py_compile collectors/jquants_free.py
+          python -m py_compile features/jquants_forecast.py
 
       - name: J-Quants key not configured
         if: env.JQUANTS_API_KEY == ''
