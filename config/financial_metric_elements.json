@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "description": "Transparent exact-local-name aliases for canonical financial research metrics. Raw EDINET XBRL facts remain the source of truth.",
   "metrics": {
     "revenue": [
@@ -53,7 +53,11 @@
       "NetCashProvidedByUsedInOperatingActivities"
     ],
     "investing_cash_flow": [
-      "NetCashProvidedByUsedInInvestingActivities"
+      "NetCashProvidedByUsedInInvestingActivities",
+      "NetCashProvidedByUsedInInvestmentActivities",
+      "NetCashProvidedByUsedInInvestingActivitiesSummaryOfBusinessResults",
+      "NetCashProvidedByUsedInInvestingActivitiesIFRS",
+      "CashFlowsFromUsedInInvestingActivitiesIFRSSummaryOfBusinessResults"
     ],
     "financing_cash_flow": [
       "NetCashProvidedByUsedInFinancingActivities"
