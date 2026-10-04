@@ -350,3 +350,72 @@ def test_build_financial_features_uses_debt_components_proxy_without_calling_it_
     assert out.loc["net_debt_components_proxy", "value"] == pytest.approx(500.0)
     assert "net_debt" not in out.index
     assert out.loc["roic", "value"] == pytest.approx((140.0 * 0.8) / 1500.0)
+
+
+
+def test_build_financial_features_builds_buyback_intensity_from_financing_cash_flow():
+    common = {
+        "doc_id": "DOC5",
+        "stock_code": "22220",
+        "period_end": "2026-03-31",
+        "known_at": "2026-05-10T00:00:00Z",
+        "observed_at": "2026-05-10T01:00:00Z",
+        "relative_year": "当期",
+        "consolidation": "連結",
+        "period_type": "期間",
+    }
+    frame = pd.DataFrame(
+        [
+            {
+                **common,
+                "metric": "treasury_stock_purchase_cash_flow",
+                "numeric_value": -120.0,
+            },
+            {
+                **common,
+                "metric": "shareholders_equity",
+                "numeric_value": 1200.0,
+                "relative_year": "当期末",
+                "period_type": "時点",
+            },
+        ]
+    )
+
+    out = build_financial_features(frame).set_index("feature")
+
+    assert out.loc["buyback_cash_outflow", "value"] == pytest.approx(120.0)
+    assert out.loc["buyback_to_equity", "value"] == pytest.approx(0.10)
+
+
+def test_build_financial_features_skips_buyback_ratio_for_nonpositive_equity():
+    common = {
+        "doc_id": "DOC6",
+        "stock_code": "33330",
+        "period_end": "2026-03-31",
+        "known_at": "2026-05-10T00:00:00Z",
+        "observed_at": "2026-05-10T01:00:00Z",
+        "relative_year": "当期",
+        "consolidation": "連結",
+        "period_type": "期間",
+    }
+    frame = pd.DataFrame(
+        [
+            {
+                **common,
+                "metric": "treasury_stock_purchase_cash_flow",
+                "numeric_value": 50.0,
+            },
+            {
+                **common,
+                "metric": "shareholders_equity",
+                "numeric_value": -100.0,
+                "relative_year": "当期末",
+                "period_type": "時点",
+            },
+        ]
+    )
+
+    out = build_financial_features(frame)
+
+    assert "buyback_cash_outflow" in out["feature"].tolist()
+    assert "buyback_to_equity" not in out["feature"].tolist()
