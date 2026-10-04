@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "description": "Transparent exact-local-name aliases for canonical financial research metrics. Raw EDINET XBRL facts remain the source of truth.",
   "metrics": {
     "revenue": [
@@ -91,6 +91,27 @@
     "income_tax": [
       "IncomeTaxes",
       "IncomeTaxExpenseIFRS"
+    ],
+    "debt_short_term_loans": [
+      "ShortTermLoansPayable"
+    ],
+    "debt_current_long_term_loans": [
+      "CurrentPortionOfLongTermLoansPayable"
+    ],
+    "debt_long_term_loans": [
+      "LongTermLoansPayable"
+    ],
+    "debt_current_bonds": [
+      "CurrentPortionOfBonds"
+    ],
+    "debt_bonds": [
+      "BondsPayable"
+    ],
+    "debt_lease_current": [
+      "LeaseObligationsCL"
+    ],
+    "debt_lease_noncurrent": [
+      "LeaseObligationsNCL"
     ]
   }
 }
