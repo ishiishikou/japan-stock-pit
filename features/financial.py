@@ -46,6 +46,23 @@ FEATURE_DEFINITIONS = {
             "(Operating cash flow - absolute capital expenditure) divided by net income."
         ),
     ),
+    "buyback_cash_outflow": FeatureDefinition(
+        name="buyback_cash_outflow",
+        higher_is_better=True,
+        source_datasets=("financial_metrics",),
+        description=(
+            "Absolute cash outflow for purchases of treasury stock reported in financing cash flow."
+        ),
+    ),
+    "buyback_to_equity": FeatureDefinition(
+        name="buyback_to_equity",
+        higher_is_better=True,
+        source_datasets=("financial_metrics",),
+        description=(
+            "Treasury-stock purchase cash outflow divided by positive period-end equity. "
+            "Used as a buyback intensity signal, not as a valuation judgment."
+        ),
+    ),
     "net_debt": FeatureDefinition(
         name="net_debt",
         higher_is_better=False,
@@ -92,6 +109,7 @@ _FLOW_METRICS = {
     "capital_expenditure",
     "pretax_income",
     "income_tax",
+    "treasury_stock_purchase_cash_flow",
 }
 
 
@@ -210,6 +228,7 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
                 "capital_expenditure",
                 "pretax_income",
                 "income_tax",
+                "treasury_stock_purchase_cash_flow",
                 "debt_short_term_loans",
                 "debt_current_long_term_loans",
                 "debt_long_term_loans",
@@ -279,6 +298,13 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
                 roic = _safe_ratio(nopat, invested_capital)
                 if roic is not None:
                     features["roic"] = roic
+
+        buyback_cash = values["treasury_stock_purchase_cash_flow"]
+        if buyback_cash is not None:
+            buyback_cash = abs(buyback_cash)
+            features["buyback_cash_outflow"] = buyback_cash
+            if equity is not None and equity > 0:
+                features["buyback_to_equity"] = buyback_cash / equity
 
         if (
             values["operating_cash_flow"] is not None
