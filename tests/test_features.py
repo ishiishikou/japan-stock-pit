@@ -129,6 +129,22 @@ def test_build_financial_features_uses_current_consolidated_values():
                 "consolidation": "連結",
                 "period_type": "期間",
             },
+            {
+                **common,
+                "metric": "pretax_income",
+                "numeric_value": 125.0,
+                "relative_year": "当期",
+                "consolidation": "連結",
+                "period_type": "期間",
+            },
+            {
+                **common,
+                "metric": "income_tax",
+                "numeric_value": 25.0,
+                "relative_year": "当期",
+                "consolidation": "連結",
+                "period_type": "期間",
+            },
         ]
     )
 
@@ -136,6 +152,7 @@ def test_build_financial_features_uses_current_consolidated_values():
 
     assert out.loc["roe", "value"] == pytest.approx(0.10)
     assert out.loc["roic_pre_tax_proxy", "value"] == pytest.approx(150.0 / 1300.0)
+    assert out.loc["roic", "value"] == pytest.approx((150.0 * 0.8) / 1300.0)
     assert out.loc["fcf_conversion", "value"] == pytest.approx(1.0)
     assert out.loc["net_debt", "value"] == pytest.approx(300.0)
 
@@ -232,3 +249,50 @@ def test_build_ownership_features_does_not_infer_missing_previous_ratio():
     out = build_ownership_features(frame)
 
     assert out.empty
+
+
+
+def test_build_financial_features_skips_roic_for_invalid_effective_tax_rate():
+    common = {
+        "doc_id": "DOC3",
+        "stock_code": "99990",
+        "period_end": "2026-03-31",
+        "known_at": "2026-05-10T00:00:00Z",
+        "observed_at": "2026-05-10T01:00:00Z",
+        "relative_year": "当期",
+        "consolidation": "連結",
+        "period_type": "期間",
+    }
+    frame = pd.DataFrame(
+        [
+            {**common, "metric": "operating_income", "numeric_value": 100.0},
+            {**common, "metric": "pretax_income", "numeric_value": 10.0},
+            {**common, "metric": "income_tax", "numeric_value": 20.0},
+            {
+                **common,
+                "metric": "shareholders_equity",
+                "numeric_value": 500.0,
+                "relative_year": "当期末",
+                "period_type": "時点",
+            },
+            {
+                **common,
+                "metric": "interest_bearing_debt",
+                "numeric_value": 100.0,
+                "relative_year": "当期末",
+                "period_type": "時点",
+            },
+            {
+                **common,
+                "metric": "cash_and_deposits",
+                "numeric_value": 50.0,
+                "relative_year": "当期末",
+                "period_type": "時点",
+            },
+        ]
+    )
+
+    out = build_financial_features(frame)
+
+    assert "roic_pre_tax_proxy" in out["feature"].tolist()
+    assert "roic" not in out["feature"].tolist()
