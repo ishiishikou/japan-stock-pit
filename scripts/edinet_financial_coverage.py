@@ -142,6 +142,10 @@ def main():
                 "metric": metric,
                 "rows": rows,
                 "documents": len(metric_docs[metric]),
+                "document_ratio": (
+                    round(len(metric_docs[metric]) / total_docs, 4)
+                    if total_docs else 0
+                ),
                 "tickers": len(metric_tickers[metric]),
                 "numeric_rows": numeric,
                 "numeric_ratio": round(numeric / rows, 4) if rows else 0,
