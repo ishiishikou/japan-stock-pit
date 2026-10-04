@@ -10,6 +10,8 @@ on:
       - main
     paths:
       - ".github/workflows/collect-boj-macro.yml"
+      - "collectors/boj_timeseries.py"
+      - "config/boj_macro_series.json"
 
 permissions:
   contents: read
