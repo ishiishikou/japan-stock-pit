@@ -19,6 +19,16 @@ FEATURE_DEFINITIONS = {
             "falling back to net assets when shareholders' equity is unavailable."
         ),
     ),
+    "roic": FeatureDefinition(
+        name="roic",
+        higher_is_better=True,
+        source_datasets=("financial_metrics",),
+        description=(
+            "NOPAT proxy divided by period-end invested capital proxy. "
+            "NOPAT uses the reported effective tax rate (income tax / pretax income) "
+            "only when that rate is between 0 and 1."
+        ),
+    ),
     "roic_pre_tax_proxy": FeatureDefinition(
         name="roic_pre_tax_proxy",
         higher_is_better=True,
@@ -56,6 +66,8 @@ _FLOW_METRICS = {
     "operating_income",
     "operating_cash_flow",
     "capital_expenditure",
+    "pretax_income",
+    "income_tax",
 }
 
 
@@ -172,6 +184,8 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
                 "cash_and_deposits",
                 "operating_cash_flow",
                 "capital_expenditure",
+                "pretax_income",
+                "income_tax",
             )
         }
 
@@ -197,9 +211,20 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
                 + values["interest_bearing_debt"]
                 - values["cash_and_deposits"]
             )
-            roic = _safe_ratio(values["operating_income"], invested_capital)
-            if roic is not None:
-                features["roic_pre_tax_proxy"] = roic
+            roic_pre_tax = _safe_ratio(values["operating_income"], invested_capital)
+            if roic_pre_tax is not None:
+                features["roic_pre_tax_proxy"] = roic_pre_tax
+
+            tax_rate = _safe_ratio(values["income_tax"], values["pretax_income"])
+            if tax_rate is not None and 0 <= tax_rate <= 1:
+                nopat = (
+                    values["operating_income"] * (1 - tax_rate)
+                    if values["operating_income"] is not None
+                    else None
+                )
+                roic = _safe_ratio(nopat, invested_capital)
+                if roic is not None:
+                    features["roic"] = roic
 
         if (
             values["operating_cash_flow"] is not None
