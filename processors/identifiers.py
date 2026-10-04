@@ -46,10 +46,10 @@ def normalize_security_code(value):
 
 
 def _latest_by_ticker(frame, ticker_col):
-    if frame.empty:
-        return frame.copy()
     work = frame.copy()
     work["_ticker"] = work[ticker_col].map(normalize_security_code)
+    if work.empty:
+        return work
     work["_known"] = pd.to_datetime(work["known_at"], utc=True, errors="coerce")
     work["_observed"] = pd.to_datetime(work["observed_at"], utc=True, errors="coerce")
     work = work.loc[
