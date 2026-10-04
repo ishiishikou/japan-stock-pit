@@ -47,6 +47,16 @@ TARGET_HINTS = {
         "investingactivities",
         "投資活動によるキャッシュ・フロー",
     ),
+    "management_forecast_revision": (
+        "forecast", "forecasts", "forecasted", "guidance", "outlook",
+        "revision", "revised", "businessresultsforecast",
+        "業績予想", "予想", "見通し", "修正",
+    ),
+    "capital_allocation_buyback": (
+        "treasurystock", "treasuryshares", "repurchase", "buyback",
+        "purchaseoftreasury", "acquisitionoftreasury",
+        "自己株式", "自社株", "取得自己株式",
+    ),
 }
 
 
