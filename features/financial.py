@@ -50,7 +50,24 @@ FEATURE_DEFINITIONS = {
         name="net_debt",
         higher_is_better=False,
         source_datasets=("financial_metrics",),
-        description="Interest-bearing debt minus cash and deposits.",
+        description="Direct reported interest-bearing debt minus cash and deposits.",
+    ),
+    "interest_bearing_debt_components_proxy": FeatureDefinition(
+        name="interest_bearing_debt_components_proxy",
+        higher_is_better=False,
+        source_datasets=("financial_metrics",),
+        description=(
+            "Sum of observed short/long-term loans, bonds and lease liabilities. "
+            "This is a components proxy, not a reported total."
+        ),
+    ),
+    "net_debt_components_proxy": FeatureDefinition(
+        name="net_debt_components_proxy",
+        higher_is_better=False,
+        source_datasets=("financial_metrics",),
+        description=(
+            "Observed interest-bearing-debt components proxy minus cash and deposits."
+        ),
     ),
 }
 
@@ -60,6 +77,13 @@ _BALANCE_METRICS = {
     "net_assets",
     "interest_bearing_debt",
     "cash_and_deposits",
+    "debt_short_term_loans",
+    "debt_current_long_term_loans",
+    "debt_long_term_loans",
+    "debt_current_bonds",
+    "debt_bonds",
+    "debt_lease_current",
+    "debt_lease_noncurrent",
 }
 _FLOW_METRICS = {
     "net_income",
@@ -186,6 +210,13 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
                 "capital_expenditure",
                 "pretax_income",
                 "income_tax",
+                "debt_short_term_loans",
+                "debt_current_long_term_loans",
+                "debt_long_term_loans",
+                "debt_current_bonds",
+                "debt_bonds",
+                "debt_lease_current",
+                "debt_lease_noncurrent",
             )
         }
 
@@ -195,7 +226,30 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
             else values["net_assets"]
         )
 
+        debt_component_names = (
+            "debt_short_term_loans",
+            "debt_current_long_term_loans",
+            "debt_long_term_loans",
+            "debt_current_bonds",
+            "debt_bonds",
+            "debt_lease_current",
+            "debt_lease_noncurrent",
+        )
+        observed_debt_components = [
+            values[name] for name in debt_component_names if values[name] is not None
+        ]
+        debt_components_proxy = (
+            sum(observed_debt_components) if observed_debt_components else None
+        )
+        debt_for_invested_capital = (
+            values["interest_bearing_debt"]
+            if values["interest_bearing_debt"] is not None
+            else debt_components_proxy
+        )
+
         features = {}
+        if debt_components_proxy is not None:
+            features["interest_bearing_debt_components_proxy"] = debt_components_proxy
 
         roe = _safe_ratio(values["net_income"], equity)
         if roe is not None:
@@ -203,12 +257,12 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
 
         if (
             equity is not None
-            and values["interest_bearing_debt"] is not None
+            and debt_for_invested_capital is not None
             and values["cash_and_deposits"] is not None
         ):
             invested_capital = (
                 equity
-                + values["interest_bearing_debt"]
+                + debt_for_invested_capital
                 - values["cash_and_deposits"]
             )
             roic_pre_tax = _safe_ratio(values["operating_income"], invested_capital)
@@ -238,13 +292,15 @@ def build_financial_features(metrics: pd.DataFrame) -> pd.DataFrame:
             if conversion is not None:
                 features["fcf_conversion"] = conversion
 
-        if (
-            values["interest_bearing_debt"] is not None
-            and values["cash_and_deposits"] is not None
-        ):
-            features["net_debt"] = (
-                values["interest_bearing_debt"] - values["cash_and_deposits"]
-            )
+        if values["cash_and_deposits"] is not None:
+            if values["interest_bearing_debt"] is not None:
+                features["net_debt"] = (
+                    values["interest_bearing_debt"] - values["cash_and_deposits"]
+                )
+            elif debt_components_proxy is not None:
+                features["net_debt_components_proxy"] = (
+                    debt_components_proxy - values["cash_and_deposits"]
+                )
 
         for feature, value in features.items():
             out.append(
