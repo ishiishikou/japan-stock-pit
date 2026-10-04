@@ -235,6 +235,12 @@ def build_forecast_revision_features_with_state(summary: pd.DataFrame, state=Non
         fy_end = item["_fy_end"]
         state_key = f"{ticker}|{fy_end}"
         previous = dict(state.get(state_key) or {})
+        last_known = pd.to_datetime(
+            previous.get("_last_known_at"), utc=True, errors="coerce"
+        )
+        if pd.notna(last_known) and item["_known"] <= last_known:
+            continue
+
         current = {col: _number(item.get(col)) for col in FORECAST_COLUMNS}
 
         if previous:
