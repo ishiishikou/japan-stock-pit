@@ -21,6 +21,33 @@ from botocore.exceptions import ClientError
 JST = timezone(timedelta(hours=9))
 
 
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(
+        json.dumps(
+            {
+                "status": "paused",
+                "reason": "b2_download_or_class_b_cap_exceeded",
+                "error": str(error)[:500],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
 def env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -303,6 +330,12 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            raise
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise
