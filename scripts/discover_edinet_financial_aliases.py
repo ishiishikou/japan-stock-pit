@@ -222,7 +222,7 @@ def main():
     compact = {
         "observed_at": report["observed_at"],
         "unmatched_elements": report["unmatched_elements"],
-        "targets": {name: items[:20] for name, items in candidates.items()},
+        "targets": {name: items[:50] for name, items in candidates.items()},
     }
     print(json.dumps(compact, ensure_ascii=False, indent=2))
 
