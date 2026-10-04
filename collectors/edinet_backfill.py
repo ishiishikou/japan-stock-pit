@@ -6,6 +6,8 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from botocore.exceptions import ClientError
+
 from edinet_packages import (
     JST,
     b2_client,
@@ -50,6 +52,32 @@ def initial_state(today_jst):
         "completed_phases": [],
         "all_completed": False,
     }
+
+
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(run_id, observed_dt, state=None, phase=None, error=None):
+    payload = {
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "run_id": run_id,
+        "observed_at": observed_dt.isoformat().replace("+00:00", "Z"),
+        "phase": phase,
+        "state": state,
+        "error": str(error)[:500] if error else None,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def storage_allows_backfill(storage, phase_name):
@@ -116,14 +144,34 @@ def main():
     today_jst = observed_dt.astimezone(JST).date()
     run_id = f"{observed_dt:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
 
-    state = get_json(s3, bucket, STATE_KEY) or initial_state(today_jst)
+    try:
+        state = get_json(s3, bucket, STATE_KEY) or initial_state(today_jst)
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(run_id, observed_dt, error=exc)
+            return
+        raise
+
     if state.get("all_completed"):
         print(json.dumps({"status": "all_completed", "state": state}, ensure_ascii=False, indent=2))
         return
 
     current_phase = PHASES[phase_index(state.get("phase"))]
     state["phase"] = current_phase["name"]
-    storage = get_json(s3, bucket, STORAGE_KEY)
+    try:
+        storage = get_json(s3, bucket, STORAGE_KEY)
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(
+                run_id,
+                observed_dt,
+                state=state,
+                phase=current_phase["name"],
+                error=exc,
+            )
+            return
+        raise
+
     allowed, guard_reason = storage_allows_backfill(storage, current_phase["name"])
     if not allowed:
         manifest = {
@@ -179,7 +227,22 @@ def main():
 
         for doc in candidates:
             doc_id = str(doc["docID"])
-            existing = get_json(s3, bucket, f"metadata/edinet/packages/doc_id={doc_id}.json")
+            try:
+                existing = get_json(
+                    s3, bucket, f"metadata/edinet/packages/doc_id={doc_id}.json"
+                )
+            except ClientError as exc:
+                if is_b2_cap_exceeded(exc):
+                    print_b2_cap_pause(
+                        run_id,
+                        observed_dt,
+                        state=state,
+                        phase=current_phase["name"],
+                        error=exc,
+                    )
+                    return
+                raise
+
             if existing and existing.get("status") == "ok":
                 skipped += 1
                 date_result["skipped"] += 1
@@ -201,6 +264,27 @@ def main():
                 processed += 1
                 date_result["processed"] += 1
                 results.append(outcome)
+            except ClientError as exc:
+                if is_b2_cap_exceeded(exc):
+                    print_b2_cap_pause(
+                        run_id,
+                        observed_dt,
+                        state=state,
+                        phase=current_phase["name"],
+                        error=exc,
+                    )
+                    return
+                failed += 1
+                date_result["failed"] += 1
+                results.append(
+                    {
+                        "doc_id": doc_id,
+                        "status": "error",
+                        "date": cursor.isoformat(),
+                        "phase": current_phase["name"],
+                        "error": str(exc)[:500],
+                    }
+                )
             except Exception as exc:
                 failed += 1
                 date_result["failed"] += 1
