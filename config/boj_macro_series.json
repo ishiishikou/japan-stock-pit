@@ -100,6 +100,34 @@
       "code": "PRCS20_5200000000%",
       "start_date": "200001",
       "label": "Services Producer Price Index, all items, year-on-year change, monthly"
+    },
+    {
+      "dataset": "tankan_large_manufacturing_actual",
+      "db": "CO",
+      "code": "TK99F1000601GCQ01000",
+      "start_date": "200401",
+      "label": "TANKAN business conditions DI, large manufacturing, actual, quarterly"
+    },
+    {
+      "dataset": "tankan_large_manufacturing_forecast",
+      "db": "CO",
+      "code": "TK99F1000601GCQ11000",
+      "start_date": "200401",
+      "label": "TANKAN business conditions DI, large manufacturing, forecast, quarterly"
+    },
+    {
+      "dataset": "tankan_large_nonmanufacturing_actual",
+      "db": "CO",
+      "code": "TK99F2000601GCQ01000",
+      "start_date": "200401",
+      "label": "TANKAN business conditions DI, large nonmanufacturing, actual, quarterly"
+    },
+    {
+      "dataset": "tankan_large_nonmanufacturing_forecast",
+      "db": "CO",
+      "code": "TK99F2000601GCQ11000",
+      "start_date": "200401",
+      "label": "TANKAN business conditions DI, large nonmanufacturing, forecast, quarterly"
     }
   ]
 }
