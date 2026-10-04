@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from analysis.universe import build_universe_snapshot
 from features.jquants_forecast import build_forecast_revision_features_with_state
 
 
@@ -202,6 +203,14 @@ def main():
         key = f"normalized/jquants/{name}/date={target_text}/current.parquet"
         put_parquet(s3, bucket, key, normalized)
         results[name]["key"] = key
+
+    master = normalized_frames.get("master", pd.DataFrame())
+    universe = build_universe_snapshot(master) if not master.empty else pd.DataFrame()
+    results["universe"] = {"rows": int(len(universe))}
+    if not universe.empty:
+        universe_key = f"normalized/jquants/universe/date={target_text}/current.parquet"
+        put_parquet(s3, bucket, universe_key, universe)
+        results["universe"]["key"] = universe_key
 
     financial_summary = normalized_frames.get("financial_summary", pd.DataFrame())
     forecast_features = pd.DataFrame()
