@@ -11,10 +11,32 @@ import boto3
 import pandas as pd
 import pyarrow.parquet as pq
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 
 PREFIX = "normalized/edinet/financial_metrics/"
 ALIAS_PATH = "config/financial_metric_elements.json"
+
+
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
 
 
 def env(name: str) -> str:
@@ -188,4 +210,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            raise
