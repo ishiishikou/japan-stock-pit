@@ -41,6 +41,12 @@ TARGET_HINTS = {
     "income_tax": (
         "incometax", "taxexpense", "corporatetax", "法人税", "所得税", "税金費用",
     ),
+    "investing_cash_flow": (
+        "netcashprovidedbyusedininvest",
+        "investmentactivities",
+        "investingactivities",
+        "投資活動によるキャッシュ・フロー",
+    ),
 }
 
 
