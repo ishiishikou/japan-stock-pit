@@ -68,12 +68,24 @@ def _clean_text(value):
 
 def _is_current_year(value) -> bool:
     text = (_clean_text(value) or "").lower()
-    return text in {"currentyear", "current_year", "current", "0"}
+    return text in {
+        "currentyear",
+        "current_year",
+        "current",
+        "0",
+        "当期",
+        "当期末",
+        "当中間期",
+        "当中間期末",
+    }
 
 
 def _is_consolidated(value) -> bool:
     text = (_clean_text(value) or "").lower()
-    return "consolidated" in text and "nonconsolidated" not in text
+    return (
+        ("consolidated" in text and "nonconsolidated" not in text)
+        or text == "連結"
+    )
 
 
 def _row_score(row: pd.Series, metric: str) -> tuple[int, int, int]:
@@ -83,9 +95,9 @@ def _row_score(row: pd.Series, metric: str) -> tuple[int, int, int]:
 
     period = (_clean_text(row.get("period_type")) or "").lower()
     if metric in _BALANCE_METRICS:
-        period_score = 0 if period == "instant" else (1 if not period else 2)
+        period_score = 0 if period in {"instant", "時点"} else (1 if not period else 2)
     elif metric in _FLOW_METRICS:
-        period_score = 0 if period == "duration" else (1 if not period else 2)
+        period_score = 0 if period in {"duration", "期間"} else (1 if not period else 2)
     else:
         period_score = 1
     return relative, consolidation, period_score
