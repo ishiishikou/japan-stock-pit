@@ -2,7 +2,7 @@
 """Validate configured BOJ series directly against the official API."""
 
 import json
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -15,7 +15,9 @@ def main():
     cfg = json.loads(Path(CONFIG).read_text(encoding="utf-8"))
     # A recent two-year window is enough to validate active series without
     # downloading their full research history.
-    start_date = (date.today() - timedelta(days=730)).strftime("%Y%m")
+    # YYYY01 is valid as January for monthly/daily series and Q1 for
+    # quarterly series, letting one validation window cover mixed frequencies.
+    start_date = f"{date.today().year - 2}01"
 
     results = []
     failed = []
