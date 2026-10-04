@@ -37,6 +37,69 @@
       "code": "FX180110002",
       "start_date": "197001",
       "label": "Real effective exchange rate index, monthly"
+    },
+    {
+      "dataset": "monetary_base",
+      "db": "MD01",
+      "code": "MABS1AN11",
+      "start_date": "199801",
+      "label": "Monetary base, average amounts outstanding, monthly"
+    },
+    {
+      "dataset": "monetary_base_yoy",
+      "db": "MD01",
+      "code": "MABS1AN11@",
+      "start_date": "199801",
+      "label": "Monetary base, average amounts outstanding, year-on-year change, monthly"
+    },
+    {
+      "dataset": "money_stock_m2",
+      "db": "MD02",
+      "code": "MAM1NAM2M2MO",
+      "start_date": "200304",
+      "label": "M2, average amounts outstanding, monthly"
+    },
+    {
+      "dataset": "bank_loans",
+      "db": "MD11",
+      "code": "DLCLAEDBLTTO",
+      "start_date": "200010",
+      "label": "Outstanding loans and bills discounted, domestically licensed banks, monthly"
+    },
+    {
+      "dataset": "corporate_loans",
+      "db": "MD11",
+      "code": "DLCLAEDBLTCO",
+      "start_date": "200010",
+      "label": "Outstanding corporate loans, domestically licensed banks, monthly"
+    },
+    {
+      "dataset": "new_loan_rate_short",
+      "db": "IR04",
+      "code": "DLLR2CIDBNL2",
+      "start_date": "200001",
+      "label": "New loans and discounts, short-term, domestically licensed banks, monthly"
+    },
+    {
+      "dataset": "new_loan_rate_long",
+      "db": "IR04",
+      "code": "DLLR2CIDBNL3",
+      "start_date": "200001",
+      "label": "New loans and discounts, long-term, domestically licensed banks, monthly"
+    },
+    {
+      "dataset": "producer_price_yoy",
+      "db": "PR01",
+      "code": "PRCG20_2200000000%",
+      "start_date": "200001",
+      "label": "Producer Price Index, all commodities, year-on-year change, monthly"
+    },
+    {
+      "dataset": "services_price_yoy",
+      "db": "PR02",
+      "code": "PRCS20_5200000000%",
+      "start_date": "200001",
+      "label": "Services Producer Price Index, all items, year-on-year change, monthly"
     }
   ]
 }
