@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Transparent exact-local-name aliases for canonical financial research metrics. Raw EDINET XBRL facts remain the source of truth.",
   "metrics": {
     "revenue": [
@@ -60,11 +60,13 @@
     ],
     "depreciation": [
       "DepreciationAndAmortization",
-      "Depreciation"
+      "Depreciation",
+      "DepreciationAndAmortizationOpeCF"
     ],
     "capital_expenditure": [
       "PurchaseOfPropertyPlantAndEquipmentAndIntangibleAssets",
-      "PurchaseOfPropertyPlantAndEquipment"
+      "PurchaseOfPropertyPlantAndEquipment",
+      "CapitalExpendituresOverviewOfCapitalExpendituresEtc"
     ],
     "research_and_development": [
       "ResearchAndDevelopmentExpenses",
@@ -72,14 +74,23 @@
     ],
     "eps": [
       "BasicEarningsLossPerShare",
-      "BasicEarningsPerShare"
+      "BasicEarningsPerShare",
+      "BasicEarningsLossPerShareSummaryOfBusinessResults",
+      "BasicEarningsLossPerShareIFRSSummaryOfBusinessResults",
+      "BasicEarningsLossPerShareIFRS"
     ],
     "dividend_per_share": [
-      "DividendPaidPerShare"
+      "DividendPaidPerShare",
+      "DividendPaidPerShareSummaryOfBusinessResults",
+      "DividendPerShareDividendsOfSurplus"
     ],
     "shares_outstanding": [
       "TotalNumberOfIssuedSharesSummaryOfBusinessResults",
       "NumberOfIssuedSharesAsOfFiscalYearEndIssuedSharesTotalNumberOfSharesEtc"
+    ],
+    "income_tax": [
+      "IncomeTaxes",
+      "IncomeTaxExpenseIFRS"
     ]
   }
 }
