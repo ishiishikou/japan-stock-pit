@@ -12,6 +12,8 @@ on:
       - "collectors/jquants_free.py"
       - "features/jquants_forecast.py"
       - "features/contracts.py"
+      - "analysis/universe.py"
+      - "processors/identifiers.py"
       - "requirements-jquants.txt"
 
 permissions:
@@ -38,6 +40,8 @@ jobs:
         run: |
           python -m py_compile collectors/jquants_free.py
           python -m py_compile features/jquants_forecast.py
+          python -m py_compile analysis/universe.py
+          python -m py_compile processors/identifiers.py
 
       - name: J-Quants key not configured
         if: env.JQUANTS_API_KEY == ''
