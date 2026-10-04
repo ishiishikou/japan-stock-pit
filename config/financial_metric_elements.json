@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "description": "Transparent exact-local-name aliases for canonical financial research metrics. Raw EDINET XBRL facts remain the source of truth.",
   "metrics": {
     "revenue": [
@@ -116,6 +116,9 @@
     ],
     "debt_lease_noncurrent": [
       "LeaseObligationsNCL"
+    ],
+    "treasury_stock_purchase_cash_flow": [
+      "PurchaseOfTreasuryStockFinCF"
     ]
   }
 }
