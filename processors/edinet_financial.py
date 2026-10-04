@@ -54,6 +54,27 @@ OUTPUT_COLUMNS = [
 ]
 
 
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
+
+
 def env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -335,6 +356,25 @@ def main():
             )
             processed += 1
             rows_written += len(out)
+        except ClientError as exc:
+            if is_b2_cap_exceeded(exc):
+                raise
+            failed += 1
+            errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
+            put_json(
+                s3,
+                bucket,
+                f"{MANIFEST_PREFIX}errors/doc_id={doc_id}/{run_id}.json",
+                {
+                    "status": "error",
+                    "doc_id": doc_id,
+                    "source_key": source_key,
+                    "error": str(exc)[:1000],
+                    "alias_config_version": alias_version,
+                    "alias_config_sha256": alias_sha256,
+                    "ingestion_run_id": run_id,
+                },
+            )
         except Exception as exc:
             failed += 1
             errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
@@ -382,4 +422,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            raise
