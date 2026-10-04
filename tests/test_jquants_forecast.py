@@ -3,6 +3,7 @@ import pytest
 
 from features.jquants_forecast import (
     build_forecast_revision_features,
+    build_forecast_revision_features_with_state,
     normalize_jquants_ticker,
 )
 
@@ -155,3 +156,85 @@ def test_forecast_revision_retains_last_explicit_forecast_when_field_is_omitted(
 
     assert len(op) == 1
     assert op.iloc[0]["value"] == pytest.approx(0.2)
+
+
+
+def test_stateful_forecast_revision_is_idempotent():
+    first = pd.DataFrame(
+        [
+            {
+                "Code": "72030",
+                "DiscDate": "2026-05-10",
+                "DiscNo": "A",
+                "CurFYEn": "2027-03-31",
+                "known_at": "2026-05-10T06:00:00Z",
+                "observed_at": "2026-08-02T00:00:00Z",
+                "FSales": 1000.0,
+                "FOP": 100.0,
+                "FOdP": 90.0,
+                "FNP": 70.0,
+                "FEPS": 20.0,
+            }
+        ]
+    )
+    first_features, state = build_forecast_revision_features_with_state(first, {})
+
+    assert first_features.empty
+    assert state["7203|2027-03-31"]["FOP"] == pytest.approx(100.0)
+
+    second = first.copy()
+    second.loc[0, "DiscDate"] = "2026-08-10"
+    second.loc[0, "DiscNo"] = "B"
+    second.loc[0, "known_at"] = "2026-08-10T06:00:00Z"
+    second.loc[0, "observed_at"] = "2026-11-02T00:00:00Z"
+    second.loc[0, "FOP"] = 120.0
+
+    features, state = build_forecast_revision_features_with_state(second, state)
+    assert (
+        features.loc[
+            features["feature"] == "forecast_operating_profit_revision_pct",
+            "value",
+        ].iloc[0]
+        == pytest.approx(0.2)
+    )
+
+    repeated, repeated_state = build_forecast_revision_features_with_state(
+        second, state
+    )
+    assert repeated.empty
+    assert repeated_state == state
+
+
+def test_stateful_forecast_revision_does_not_roll_state_back():
+    newer_state = {
+        "7203|2027-03-31": {
+            "FSales": 1100.0,
+            "FOP": 120.0,
+            "_last_known_at": "2026-08-10T06:00:00Z",
+            "_last_disc_no": "B",
+        }
+    }
+    older = pd.DataFrame(
+        [
+            {
+                "Code": "72030",
+                "DiscDate": "2026-05-10",
+                "DiscNo": "A",
+                "CurFYEn": "2027-03-31",
+                "known_at": "2026-05-10T06:00:00Z",
+                "observed_at": "2026-11-02T00:00:00Z",
+                "FSales": 1000.0,
+                "FOP": 100.0,
+                "FOdP": None,
+                "FNP": None,
+                "FEPS": None,
+            }
+        ]
+    )
+
+    features, state = build_forecast_revision_features_with_state(
+        older, newer_state
+    )
+
+    assert features.empty
+    assert state["7203|2027-03-31"]["FOP"] == pytest.approx(120.0)
