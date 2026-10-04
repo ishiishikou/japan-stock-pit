@@ -71,14 +71,18 @@ def clean(value):
 def alias_fingerprint(path=ALIAS_PATH):
     raw = Path(path).read_bytes()
     cfg = json.loads(raw)
-    return cfg.get("version"), hashlib.sha256(raw).hexdigest()
+    return (
+        cfg.get("version"),
+        hashlib.sha256(raw).hexdigest(),
+        sorted(cfg.get("metrics", {}).keys()),
+    )
 
 
 def main():
     s3 = client()
     bucket = env("B2_BUCKET_NAME")
     now = datetime.now(timezone.utc)
-    alias_version, alias_sha256 = alias_fingerprint()
+    alias_version, alias_sha256, configured_metrics = alias_fingerprint()
 
     metric_rows = Counter()
     metric_docs = defaultdict(set)
@@ -152,6 +156,10 @@ def main():
         "total_documents": total_docs,
         "total_rows": total_rows,
         "metrics": metrics,
+        "configured_metrics": configured_metrics,
+        "missing_configured_metrics": sorted(
+            set(configured_metrics) - set(metric_rows.keys())
+        ),
         "document_types": dict(doc_types.most_common()),
         "top_relative_years": relative_years.most_common(30),
         "top_consolidations": consolidations.most_common(30),
