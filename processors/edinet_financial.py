@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import io
 import json
 import math
@@ -181,13 +182,22 @@ def first(frame, column):
     return None
 
 
-def load_aliases(path):
-    cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+def load_alias_config(path):
+    raw = Path(path).read_bytes()
+    cfg = json.loads(raw)
     reverse = {}
     for metric, aliases in cfg["metrics"].items():
         for alias in aliases:
             reverse.setdefault(alias, []).append(metric)
-    return reverse
+    return {
+        "aliases": reverse,
+        "version": cfg.get("version"),
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    }
+
+
+def load_aliases(path):
+    return load_alias_config(path)["aliases"]
 
 
 def transform(frame, source_key, alias_map, run_id):
@@ -246,9 +256,13 @@ def transform(frame, source_key, alias_map, run_id):
 
 
 def main():
-    alias_map = load_aliases(
-        os.getenv("EDINET_FINANCIAL_ALIASES", "config/financial_metric_elements.json")
+    alias_path = os.getenv(
+        "EDINET_FINANCIAL_ALIASES", "config/financial_metric_elements.json"
     )
+    alias_config = load_alias_config(alias_path)
+    alias_map = alias_config["aliases"]
+    alias_version = alias_config["version"]
+    alias_sha256 = alias_config["sha256"]
     s3 = client()
     bucket = env("B2_BUCKET_NAME")
     now = datetime.now(timezone.utc)
@@ -262,7 +276,16 @@ def main():
         doc_id = source_key.rsplit("/", 1)[-1].removesuffix(".parquet")
         manifest_key = f"{MANIFEST_PREFIX}doc_id={doc_id}.json"
         existing = get_json(s3, bucket, manifest_key)
-        if existing and existing.get("status") in {"ok", "no_matches"}:
+        alias_config_matches = (
+            existing
+            and existing.get("alias_config_version") == alias_version
+            and existing.get("alias_config_sha256") == alias_sha256
+        )
+        if (
+            existing
+            and existing.get("status") in {"ok", "no_matches"}
+            and alias_config_matches
+        ):
             skipped += 1
             continue
 
@@ -280,6 +303,8 @@ def main():
                         "status": "no_matches",
                         "doc_id": doc_id,
                         "source_key": source_key,
+                        "alias_config_version": alias_version,
+                        "alias_config_sha256": alias_sha256,
                         "observed_at": now.isoformat().replace("+00:00", "Z"),
                         "ingestion_run_id": run_id,
                     },
@@ -302,6 +327,8 @@ def main():
                     "output_key": output_key,
                     "rows": len(out),
                     "metrics": sorted(out["metric"].unique().tolist()),
+                    "alias_config_version": alias_version,
+                    "alias_config_sha256": alias_sha256,
                     "observed_at": now.isoformat().replace("+00:00", "Z"),
                     "ingestion_run_id": run_id,
                 },
@@ -320,6 +347,8 @@ def main():
                     "doc_id": doc_id,
                     "source_key": source_key,
                     "error": str(exc)[:1000],
+                    "alias_config_version": alias_version,
+                    "alias_config_sha256": alias_sha256,
                     "ingestion_run_id": run_id,
                 },
             )
@@ -328,6 +357,8 @@ def main():
         "source_id": "edinet_api_v2",
         "dataset": "financial_metrics",
         "run_id": run_id,
+        "alias_config_version": alias_version,
+        "alias_config_sha256": alias_sha256,
         "observed_at": now.isoformat().replace("+00:00", "Z"),
         "processed_documents": processed,
         "skipped_documents": skipped,
