@@ -46,7 +46,7 @@ def normalize_jquants_ticker(value):
     text = str(value).strip()
     if text.endswith(".0"):
         text = text[:-2]
-    if len(text) == 5 and text.isdigit() and text.endswith("0"):
+    if len(text) == 5 and text.endswith("0"):
         return text[:4]
     return text or None
 
