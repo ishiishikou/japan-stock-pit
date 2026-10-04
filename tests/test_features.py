@@ -3,6 +3,7 @@ import pytest
 
 from features.contracts import latest_asof, validate_feature_frame
 from features.financial import build_financial_features
+from features.ownership import build_ownership_features
 
 
 def sample_frame():
@@ -117,3 +118,61 @@ def test_build_financial_features_does_not_infer_missing_metrics():
 
     assert out["feature"].tolist() == ["roe"]
     assert out.iloc[0]["value"] == pytest.approx(0.125)
+
+
+
+def test_build_ownership_features_prefers_reported_change_and_largest_holder_move():
+    common = {
+        "doc_id": "OWN1",
+        "issuer_stock_code": "1234",
+        "filing_date": "2026-06-01",
+        "known_at": "2026-06-01T01:00:00Z",
+        "observed_at": "2026-06-01T02:00:00Z",
+    }
+    frame = pd.DataFrame(
+        [
+            {
+                **common,
+                "holder_name": "Holder A",
+                "holding_ratio": 0.08,
+                "previous_holding_ratio": 0.05,
+                "holding_ratio_change": 0.01,
+            },
+            {
+                **common,
+                "holder_name": "Holder B",
+                "holding_ratio": 0.12,
+                "previous_holding_ratio": 0.07,
+                "holding_ratio_change": None,
+            },
+        ]
+    )
+
+    out = build_ownership_features(frame)
+
+    assert len(out) == 1
+    assert out.iloc[0]["feature"] == "ownership_ratio_change"
+    assert out.iloc[0]["value"] == pytest.approx(0.05)
+    assert out.iloc[0]["holder_name"] == "Holder B"
+
+
+def test_build_ownership_features_does_not_infer_missing_previous_ratio():
+    frame = pd.DataFrame(
+        [
+            {
+                "doc_id": "OWN2",
+                "issuer_stock_code": "5678",
+                "filing_date": "2026-06-02",
+                "known_at": "2026-06-02T01:00:00Z",
+                "observed_at": "2026-06-02T02:00:00Z",
+                "holder_name": "Holder C",
+                "holding_ratio": 0.11,
+                "previous_holding_ratio": None,
+                "holding_ratio_change": None,
+            }
+        ]
+    )
+
+    out = build_ownership_features(frame)
+
+    assert out.empty
