@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import hashlib
 import io
 import json
 import os
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 import boto3
 import pandas as pd
@@ -12,6 +14,7 @@ from botocore.config import Config
 
 
 PREFIX = "normalized/edinet/financial_metrics/"
+ALIAS_PATH = "config/financial_metric_elements.json"
 
 
 def env(name: str) -> str:
@@ -65,10 +68,17 @@ def clean(value):
     return text or None
 
 
+def alias_fingerprint(path=ALIAS_PATH):
+    raw = Path(path).read_bytes()
+    cfg = json.loads(raw)
+    return cfg.get("version"), hashlib.sha256(raw).hexdigest()
+
+
 def main():
     s3 = client()
     bucket = env("B2_BUCKET_NAME")
     now = datetime.now(timezone.utc)
+    alias_version, alias_sha256 = alias_fingerprint()
 
     metric_rows = Counter()
     metric_docs = defaultdict(set)
@@ -137,6 +147,8 @@ def main():
     report = {
         "observed_at": now.isoformat().replace("+00:00", "Z"),
         "dataset": "edinet_financial_metric_coverage",
+        "alias_config_version": alias_version,
+        "alias_config_sha256": alias_sha256,
         "total_documents": total_docs,
         "total_rows": total_rows,
         "metrics": metrics,
