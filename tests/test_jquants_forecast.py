@@ -11,6 +11,7 @@ from features.jquants_forecast import (
 def test_normalize_jquants_ticker_drops_check_digit_zero():
     assert normalize_jquants_ticker("72030") == "7203"
     assert normalize_jquants_ticker(72030.0) == "7203"
+    assert normalize_jquants_ticker("130A0") == "130A"
 
 
 def test_build_forecast_revision_features_compares_same_fiscal_year_only():
