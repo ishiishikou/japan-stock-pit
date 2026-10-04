@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from processors.edinet_financial import parse_numeric
+from processors.edinet_financial import load_alias_config, parse_numeric
 from processors.edinet_ownership import local_name, parse_number
 from collectors.edinet_packages import known_at_for_document
 
@@ -27,3 +27,24 @@ def test_known_at_prefers_later_operation_time():
         "opeDateTime": "2026-10-03 11:00",
     }
     assert known_at_for_document(doc, observed) == "2026-10-03T02:00:00Z"
+
+
+def test_financial_alias_config_fingerprint(tmp_path):
+    path = tmp_path / "aliases.json"
+    path.write_text(
+        '{"version": 7, "metrics": {"revenue": ["NetSales"]}}',
+        encoding="utf-8",
+    )
+
+    config = load_alias_config(path)
+
+    assert config["version"] == 7
+    assert config["aliases"] == {"NetSales": ["revenue"]}
+    assert len(config["sha256"]) == 64
+
+    original_sha = config["sha256"]
+    path.write_text(
+        '{"version": 7, "metrics": {"revenue": ["NetSales", "Revenue"]}}',
+        encoding="utf-8",
+    )
+    assert load_alias_config(path)["sha256"] != original_sha
