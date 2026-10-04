@@ -296,3 +296,57 @@ def test_build_financial_features_skips_roic_for_invalid_effective_tax_rate():
 
     assert "roic_pre_tax_proxy" in out["feature"].tolist()
     assert "roic" not in out["feature"].tolist()
+
+
+
+def test_build_financial_features_uses_debt_components_proxy_without_calling_it_reported_total():
+    common = {
+        "doc_id": "DOC4",
+        "stock_code": "11110",
+        "period_end": "2026-03-31",
+        "known_at": "2026-05-10T00:00:00Z",
+        "observed_at": "2026-05-10T01:00:00Z",
+        "relative_year": "当期末",
+        "consolidation": "連結",
+        "period_type": "時点",
+    }
+    frame = pd.DataFrame(
+        [
+            {**common, "metric": "shareholders_equity", "numeric_value": 1000.0},
+            {**common, "metric": "cash_and_deposits", "numeric_value": 200.0},
+            {**common, "metric": "debt_short_term_loans", "numeric_value": 100.0},
+            {**common, "metric": "debt_current_long_term_loans", "numeric_value": 50.0},
+            {**common, "metric": "debt_long_term_loans", "numeric_value": 300.0},
+            {**common, "metric": "debt_bonds", "numeric_value": 150.0},
+            {**common, "metric": "debt_lease_current", "numeric_value": 20.0},
+            {**common, "metric": "debt_lease_noncurrent", "numeric_value": 80.0},
+            {
+                **common,
+                "metric": "operating_income",
+                "numeric_value": 140.0,
+                "relative_year": "当期",
+                "period_type": "期間",
+            },
+            {
+                **common,
+                "metric": "pretax_income",
+                "numeric_value": 100.0,
+                "relative_year": "当期",
+                "period_type": "期間",
+            },
+            {
+                **common,
+                "metric": "income_tax",
+                "numeric_value": 20.0,
+                "relative_year": "当期",
+                "period_type": "期間",
+            },
+        ]
+    )
+
+    out = build_financial_features(frame).set_index("feature")
+
+    assert out.loc["interest_bearing_debt_components_proxy", "value"] == pytest.approx(700.0)
+    assert out.loc["net_debt_components_proxy", "value"] == pytest.approx(500.0)
+    assert "net_debt" not in out.index
+    assert out.loc["roic", "value"] == pytest.approx((140.0 * 0.8) / 1500.0)
