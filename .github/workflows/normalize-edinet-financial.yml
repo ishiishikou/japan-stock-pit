@@ -3,7 +3,7 @@ name: Normalize EDINET Financial Metrics
 on:
   workflow_dispatch:
   schedule:
-    - cron: "40 11 * * *"
+    - cron: "0 12 * * *"
   push:
     branches:
       - main
@@ -13,7 +13,7 @@ on:
       - "config/financial_metric_elements.json"
 
 concurrency:
-  group: b2-read-heavy
+  group: b2-financial
   cancel-in-progress: false
 
 permissions:
