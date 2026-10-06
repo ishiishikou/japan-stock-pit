@@ -3,7 +3,7 @@ name: PIT Data Health Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 12 * * *"
+    - cron: "30 13 * * *"
   push:
     branches:
       - main
