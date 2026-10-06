@@ -108,6 +108,27 @@ def env(name: str) -> str:
     return value.strip()
 
 
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
+
+
 def b2_client():
     endpoint = env("B2_ENDPOINT")
     if not endpoint.startswith(("http://", "https://")):
@@ -120,7 +141,12 @@ def b2_client():
         aws_access_key_id=env("B2_KEY_ID"),
         aws_secret_access_key=env("B2_APPLICATION_KEY"),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
     )
 
 
@@ -142,16 +168,6 @@ def parse_jst_timestamp(value):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=JST)
     return dt
-
-
-def object_exists(s3, bucket: str, key: str) -> bool:
-    try:
-        s3.head_object(Bucket=bucket, Key=key)
-        return True
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
-            return False
-        raise
 
 
 def read_parquet_object(s3, bucket: str, key: str):
@@ -311,14 +327,16 @@ def collect_date(s3, bucket: str, api_key: str, target: date, run_id: str, obser
         f"raw/edinet/document_list/file_date={file_date}/"
         f"sha256={payload_hash}.json.gz"
     )
-    if not object_exists(s3, bucket, raw_key):
-        s3.put_object(
-            Bucket=bucket,
-            Key=raw_key,
-            Body=gzip.compress(payload, compresslevel=9),
-            ContentType="application/gzip",
-            Metadata={"sha256": payload_hash},
-        )
+    # Hash-addressed raw keys make repeated PUTs idempotent.
+    # Avoid HEAD: S3-compatible stores may return 403 for missing keys and
+    # every metadata read consumes transaction budget.
+    s3.put_object(
+        Bucket=bucket,
+        Key=raw_key,
+        Body=gzip.compress(payload, compresslevel=9),
+        ContentType="application/gzip",
+        Metadata={"sha256": payload_hash},
+    )
 
     current = normalize_payload(body, file_date, payload_hash, observed_dt, run_id)
     current_key = (
@@ -425,6 +443,12 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            raise
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise
