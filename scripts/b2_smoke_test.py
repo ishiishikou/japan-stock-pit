@@ -1,9 +1,24 @@
+import json
 import os
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
+
+
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
 
 
 def required_env(name: str) -> str:
@@ -31,7 +46,12 @@ s3 = boto3.client(
     aws_access_key_id=key_id,
     aws_secret_access_key=application_key,
     region_name=region,
-    config=Config(signature_version="s3v4"),
+    config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
 )
 
 now = datetime.now(timezone.utc)
@@ -53,10 +73,21 @@ s3.put_object(
     ContentType="text/plain; charset=utf-8",
 )
 
-head = s3.head_object(Bucket=bucket, Key=object_key)
-size = head.get("ContentLength")
-
-if size != len(body):
-    raise RuntimeError(f"Upload verification failed: expected {len(body)} bytes, got {size}")
-
-print(f"B2 smoke test succeeded ({size} bytes).")
+try:
+    downloaded = s3.get_object(Bucket=bucket, Key=object_key)["Body"].read()
+except ClientError as exc:
+    if is_b2_cap_exceeded(exc):
+        print(json.dumps({
+            "status": "paused",
+            "reason": "b2_download_or_class_b_cap_exceeded",
+            "write_succeeded": True,
+            "error": str(exc)[:500],
+        }, ensure_ascii=False, indent=2))
+    else:
+        raise
+else:
+    if downloaded != body:
+        raise RuntimeError(
+            f"Upload verification failed: expected {len(body)} bytes, got {len(downloaded)}"
+        )
+    print(f"B2 smoke test succeeded ({len(downloaded)} bytes).")
