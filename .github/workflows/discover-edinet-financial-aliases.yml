@@ -8,7 +8,10 @@ on:
     paths:
       - ".github/workflows/discover-edinet-financial-aliases.yml"
       - "scripts/discover_edinet_financial_aliases.py"
-      - "config/financial_metric_elements.json"
+
+concurrency:
+  group: b2-read-heavy
+  cancel-in-progress: false
 
 permissions:
   contents: read
