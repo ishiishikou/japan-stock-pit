@@ -3,7 +3,7 @@ name: EDINET Financial Metric Coverage
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 12 * * *"
+    - cron: "30 12 * * *"
   push:
     branches:
       - main
@@ -12,7 +12,7 @@ on:
       - "scripts/edinet_financial_coverage.py"
 
 concurrency:
-  group: b2-read-heavy
+  group: b2-coverage
   cancel-in-progress: false
 
 permissions:
