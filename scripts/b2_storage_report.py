@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 
 REFERENCE_BUDGET_BYTES = 10 * 1024**3
@@ -16,6 +17,27 @@ def env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value.strip()
+
+
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
 
 
 def client():
@@ -30,7 +52,12 @@ def client():
         aws_access_key_id=env("B2_KEY_ID"),
         aws_secret_access_key=env("B2_APPLICATION_KEY"),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
     )
 
 
@@ -119,4 +146,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            raise
