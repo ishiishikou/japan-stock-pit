@@ -10,7 +10,7 @@ on:
       - "scripts/discover_edinet_financial_aliases.py"
 
 concurrency:
-  group: b2-read-heavy
+  group: b2-alias-discovery
   cancel-in-progress: false
 
 permissions:
