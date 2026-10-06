@@ -12,6 +12,10 @@ on:
       - ".github/workflows/normalize-edinet-ownership.yml"
       - "processors/edinet_ownership.py"
 
+concurrency:
+  group: b2-read-heavy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
