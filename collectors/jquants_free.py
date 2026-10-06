@@ -75,7 +75,12 @@ def b2_client():
         aws_access_key_id=env("B2_KEY_ID"),
         aws_secret_access_key=env("B2_APPLICATION_KEY"),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
     )
 
 
