@@ -22,6 +22,10 @@ on:
       - "collectors/edinet_packages.py"
       - "config/edinet_document_types.json"
 
+concurrency:
+  group: b2-read-heavy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
