@@ -91,6 +91,27 @@ def env(name: str, default=None) -> str:
     return value.strip()
 
 
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
+
+
 def b2_client():
     endpoint = env("B2_ENDPOINT")
     if not endpoint.startswith(("http://", "https://")):
@@ -103,7 +124,12 @@ def b2_client():
         aws_access_key_id=env("B2_KEY_ID"),
         aws_secret_access_key=env("B2_APPLICATION_KEY"),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
     )
 
 
@@ -145,6 +171,28 @@ def get_json(s3, bucket: str, key: str):
         if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}:
             return None
         raise
+
+
+def list_successful_package_doc_ids(s3, bucket: str):
+    prefix = "metadata/edinet/packages/doc_id="
+    doc_ids = set()
+    token = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kwargs)
+        for obj in page.get("Contents") or []:
+            key = obj.get("Key") or ""
+            if not key.startswith(prefix) or not key.endswith(".json"):
+                continue
+            doc_id = key[len(prefix):-5]
+            if doc_id and "/" not in doc_id:
+                doc_ids.add(doc_id)
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+    return doc_ids
 
 
 def put_json(s3, bucket: str, key: str, payload: dict):
@@ -384,9 +432,6 @@ def process_document(
 ):
     doc_id = str(doc["docID"])
     manifest_key = f"metadata/edinet/packages/doc_id={doc_id}.json"
-    existing = get_json(s3, bucket, manifest_key)
-    if existing and existing.get("status") == "ok":
-        return {"doc_id": doc_id, "status": "skipped_existing", "facts": 0}
 
     payload = fetch_csv_package(api_key, doc_id)
     package_hash = sha256_bytes(payload)
@@ -480,6 +525,7 @@ def main():
     observed_dt = datetime.now(timezone.utc)
     run_id = f"{observed_dt:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
     today_jst = observed_dt.astimezone(JST).date()
+    processed_doc_ids = list_successful_package_doc_ids(s3, bucket)
 
     candidates = []
     list_counts = {}
@@ -510,8 +556,7 @@ def main():
         if new_processed >= args.max_new_documents:
             break
         doc_id = str(doc["docID"])
-        existing = get_json(s3, bucket, f"metadata/edinet/packages/doc_id={doc_id}.json")
-        if existing and existing.get("status") == "ok":
+        if doc_id in processed_doc_ids:
             results.append({"doc_id": doc_id, "status": "skipped_existing", "facts": 0})
             continue
 
@@ -526,7 +571,10 @@ def main():
             )
             results.append(result)
             new_processed += 1
+            processed_doc_ids.add(doc_id)
         except Exception as exc:
+            if is_b2_cap_exceeded(exc):
+                raise
             error_manifest = {
                 "status": "error",
                 "doc_id": doc_id,
@@ -574,6 +622,12 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            raise
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise
