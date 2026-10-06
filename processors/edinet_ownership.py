@@ -96,6 +96,27 @@ def env(name: str) -> str:
     return value.strip()
 
 
+def is_b2_cap_exceeded(exc):
+    if not isinstance(exc, ClientError):
+        return False
+    error = exc.response.get("Error", {})
+    code = str(error.get("Code") or "")
+    message = str(error.get("Message") or "").lower()
+    return (
+        code == "AccessDenied"
+        and "cap exceeded" in message
+        and ("download" in message or "class b" in message or "transaction" in message)
+    )
+
+
+def print_b2_cap_pause(error):
+    print(json.dumps({
+        "status": "paused",
+        "reason": "b2_download_or_class_b_cap_exceeded",
+        "error": str(error)[:500],
+    }, ensure_ascii=False, indent=2))
+
+
 def b2_client():
     endpoint = env("B2_ENDPOINT")
     if not endpoint.startswith(("http://", "https://")):
@@ -108,7 +129,12 @@ def b2_client():
         aws_access_key_id=env("B2_KEY_ID"),
         aws_secret_access_key=env("B2_APPLICATION_KEY"),
         region_name=region,
-        config=Config(signature_version="s3v4"),
+        config=Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=10,
+            read_timeout=30,
+        ),
     )
 
 
@@ -162,6 +188,28 @@ def list_parquet_keys(s3, bucket: str, prefix: str):
         if not response.get("IsTruncated"):
             break
         token = response.get("NextContinuationToken")
+
+
+def list_successful_ownership_doc_ids(s3, bucket: str):
+    prefix = f"{MANIFEST_PREFIX}doc_id="
+    doc_ids = set()
+    token = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kwargs)
+        for obj in page.get("Contents") or []:
+            key = obj.get("Key") or ""
+            if not key.startswith(prefix) or not key.endswith(".json"):
+                continue
+            doc_id = key[len(prefix):-5]
+            if doc_id and "/" not in doc_id:
+                doc_ids.add(doc_id)
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+    return doc_ids
 
 
 def local_name(element_id) -> str:
@@ -391,12 +439,12 @@ def main():
     failed = 0
     output_rows = 0
     failures = []
+    processed_doc_ids = list_successful_ownership_doc_ids(s3, bucket)
 
     for source_key in list_parquet_keys(s3, bucket, SOURCE_PREFIX):
         doc_id = source_key.rsplit("/", 1)[-1].removesuffix(".parquet")
         manifest_key = f"{MANIFEST_PREFIX}doc_id={doc_id}.json"
-        existing = get_json(s3, bucket, manifest_key)
-        if existing and existing.get("status") == "ok":
+        if doc_id in processed_doc_ids:
             skipped += 1
             continue
 
@@ -423,7 +471,10 @@ def main():
             put_json(s3, bucket, manifest_key, manifest)
             processed += 1
             output_rows += len(summary)
+            processed_doc_ids.add(doc_id)
         except Exception as exc:
+            if is_b2_cap_exceeded(exc):
+                raise
             failed += 1
             failures.append({"doc_id": doc_id, "error": str(exc)[:500]})
             put_json(
@@ -468,6 +519,12 @@ def main():
 if __name__ == "__main__":
     try:
         main()
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(exc)
+        else:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            raise
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         raise
