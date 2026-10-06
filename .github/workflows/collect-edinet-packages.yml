@@ -23,7 +23,7 @@ on:
       - "config/edinet_document_types.json"
 
 concurrency:
-  group: b2-read-heavy
+  group: b2-packages
   cancel-in-progress: false
 
 permissions:
