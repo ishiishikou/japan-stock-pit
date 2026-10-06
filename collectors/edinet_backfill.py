@@ -15,6 +15,7 @@ from edinet_packages import (
     fetch_list,
     get_json,
     load_rules,
+    list_successful_package_doc_ids,
     process_document,
     put_json,
     select_documents,
@@ -194,6 +195,20 @@ def main():
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         return
 
+    try:
+        processed_doc_ids = list_successful_package_doc_ids(s3, bucket)
+    except ClientError as exc:
+        if is_b2_cap_exceeded(exc):
+            print_b2_cap_pause(
+                run_id,
+                observed_dt,
+                state=state,
+                phase=current_phase["name"],
+                error=exc,
+            )
+            return
+        raise
+
     cursor = date.fromisoformat(state["cursor_date"])
     min_date = date.fromisoformat(state["min_date"])
     dates_completed = 0
@@ -227,23 +242,7 @@ def main():
 
         for doc in candidates:
             doc_id = str(doc["docID"])
-            try:
-                existing = get_json(
-                    s3, bucket, f"metadata/edinet/packages/doc_id={doc_id}.json"
-                )
-            except ClientError as exc:
-                if is_b2_cap_exceeded(exc):
-                    print_b2_cap_pause(
-                        run_id,
-                        observed_dt,
-                        state=state,
-                        phase=current_phase["name"],
-                        error=exc,
-                    )
-                    return
-                raise
-
-            if existing and existing.get("status") == "ok":
+            if doc_id in processed_doc_ids:
                 skipped += 1
                 date_result["skipped"] += 1
                 continue
@@ -263,6 +262,7 @@ def main():
                 )
                 processed += 1
                 date_result["processed"] += 1
+                processed_doc_ids.add(doc_id)
                 results.append(outcome)
             except ClientError as exc:
                 if is_b2_cap_exceeded(exc):
