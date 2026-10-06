@@ -3,15 +3,17 @@ name: EDINET Financial Metric Coverage
 on:
   workflow_dispatch:
   schedule:
-    - cron: "50 11 * * *"
+    - cron: "15 12 * * *"
   push:
     branches:
       - main
     paths:
       - ".github/workflows/edinet-financial-coverage.yml"
       - "scripts/edinet_financial_coverage.py"
-      - "processors/edinet_financial.py"
-      - "config/financial_metric_elements.json"
+
+concurrency:
+  group: b2-read-heavy
+  cancel-in-progress: false
 
 permissions:
   contents: read
