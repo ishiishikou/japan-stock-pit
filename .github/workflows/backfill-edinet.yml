@@ -12,6 +12,10 @@ on:
       - ".github/workflows/backfill-edinet.yml"
       - "collectors/edinet_backfill.py"
 
+concurrency:
+  group: b2-read-heavy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
