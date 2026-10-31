@@ -5,13 +5,6 @@ on:
   schedule:
     # Once daily at 14:10 JST while Backblaze Class B cap is constrained.
     - cron: "10 5 * * *"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/backfill-edinet.yml"
-      - "collectors/edinet_backfill.py"
-
 concurrency:
   group: b2-backfill
   cancel-in-progress: false
