@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import atexit
 import hashlib
 import io
 import json
@@ -118,7 +119,7 @@ def b2_client():
         endpoint = "https://" + endpoint
     host = endpoint.split("//", 1)[-1]
     region = host.split(".")[1] if host.startswith("s3.") else "us-east-005"
-    return boto3.client(
+    s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=env("B2_KEY_ID"),
@@ -131,6 +132,27 @@ def b2_client():
             read_timeout=30,
         ),
     )
+    # Count calls at the shared client boundary for packages AND historical
+    # backfill. This is an SDK operation count, not Backblaze billing data.
+    calls = {"GetObject": 0, "ListObjectsV2": 0, "PutObject": 0}
+
+    def callback_for(operation):
+        return lambda **kwargs: calls.__setitem__(operation, calls[operation] + 1)
+
+    for operation in calls:
+        s3.meta.events.register(
+            f"before-call.s3.{operation}", callback_for(operation)
+        )
+
+    def report_api_calls():
+        print(json.dumps({
+            "event": "b2_api_usage",
+            "workflow": os.getenv("GITHUB_WORKFLOW", "edinet_packages"),
+            "calls": calls,
+        }, ensure_ascii=False))
+
+    atexit.register(report_api_calls)
+    return s3
 
 
 def sha256_bytes(data: bytes) -> str:

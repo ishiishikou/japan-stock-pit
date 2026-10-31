@@ -12,16 +12,8 @@ on:
         required: false
         default: "150"
   schedule:
-    # 12:20 and 19:20 JST. Repeated lookback + per-doc manifests make runs idempotent.
-    - cron: "20 3,10 * * *"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/collect-edinet-packages.yml"
-      - "collectors/edinet_packages.py"
-      - "config/edinet_document_types.json"
-
+    # Once daily at 12:20 JST; seven-day lookback preserves catch-up.
+    - cron: "20 3 * * *"
 concurrency:
   group: b2-packages
   cancel-in-progress: false
