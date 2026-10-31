@@ -14,14 +14,6 @@ on:
   schedule:
     # Once daily at 12:20 JST; seven-day lookback preserves catch-up.
     - cron: "20 3 * * *"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/collect-edinet-packages.yml"
-      - "collectors/edinet_packages.py"
-      - "config/edinet_document_types.json"
-
 concurrency:
   group: b2-packages
   cancel-in-progress: false
