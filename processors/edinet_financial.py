@@ -281,6 +281,120 @@ def transform(frame, source_key, alias_map, run_id):
     return pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
 
 
+
+INDEX_KEY = "metadata/edinet/financial_metric_index/v1.json"
+INDEX_VERSION = 1
+
+
+class B2CallCounter:
+    """Count SDK S3 operations without exposing bucket contents or credentials."""
+
+    def __init__(self):
+        self.counts = {"GetObject": 0, "ListObjectsV2": 0, "PutObject": 0}
+
+    def attach(self, s3):
+        for operation in self.counts:
+            def listener(op):
+                return lambda **kwargs: self.counts.__setitem__(
+                    op, self.counts[op] + 1
+                )
+
+            s3.meta.events.register(f"before-call.s3.{operation}", listener(operation))
+        return s3
+
+    def snapshot(self):
+        return dict(self.counts)
+
+
+def list_financial_source_objects(s3, bucket):
+    """Enumerate source Parquet with ETags, so changed objects invalidate the index."""
+    token = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": SOURCE_PREFIX, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kwargs)
+        for item in page.get("Contents") or []:
+            if str(item.get("Key") or "").endswith(".parquet"):
+                yield item
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+        if not token:
+            raise RuntimeError("B2 source listing truncated without continuation token")
+
+
+def list_existing_financial_manifest_ids(s3, bucket):
+    """Use LIST, not one GET per doc, to determine which legacy manifests exist."""
+    prefix = f"{MANIFEST_PREFIX}doc_id="
+    token = None
+    ids = set()
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if token:
+            kwargs["ContinuationToken"] = token
+        page = s3.list_objects_v2(**kwargs)
+        for item in page.get("Contents") or []:
+            key = str(item.get("Key") or "")
+            suffix = key.removeprefix(prefix)
+            if key.startswith(prefix) and suffix.endswith(".json") and "/" not in suffix:
+                ids.add(suffix[:-5])
+        if not page.get("IsTruncated"):
+            break
+        token = page.get("NextContinuationToken")
+        if not token:
+            raise RuntimeError("B2 manifest listing truncated without continuation token")
+    return ids
+
+
+def load_financial_index(s3, bucket):
+    """Avoid a missing-key GET (B2 can return nonstandard error bodies for 404)."""
+    result = s3.list_objects_v2(Bucket=bucket, Prefix=INDEX_KEY, MaxKeys=1)
+    exists = any(item.get("Key") == INDEX_KEY for item in result.get("Contents") or [])
+    if not exists:
+        return {"version": INDEX_VERSION, "entries": {}}
+    value = get_json(s3, bucket, INDEX_KEY)
+    if not isinstance(value, dict) or value.get("version") != INDEX_VERSION:
+        raise RuntimeError("Unexpected B2 financial index format: refuse unsafe skip")
+    if not isinstance(value.get("entries"), dict):
+        raise RuntimeError("B2 financial index entries must be a dictionary")
+    return value
+
+
+def financial_index_entry(source_obj, status, alias_version, alias_sha256):
+    return {
+        "status": status,
+        "source_key": source_obj["Key"],
+        "source_etag": source_obj.get("ETag"),
+        "source_size": source_obj.get("Size"),
+        "alias_config_version": alias_version,
+        "alias_config_sha256": alias_sha256,
+    }
+
+
+def financial_index_matches(entry, source_obj, alias_version, alias_sha256):
+    return bool(
+        isinstance(entry, dict)
+        and entry.get("status") in {"ok", "no_matches"}
+        and entry.get("source_key") == source_obj.get("Key")
+        and source_obj.get("ETag") is not None
+        and entry.get("source_etag") == source_obj.get("ETag")
+        and entry.get("source_size") == source_obj.get("Size")
+        and entry.get("alias_config_version") == alias_version
+        and entry.get("alias_config_sha256") == alias_sha256
+    )
+
+
+def financial_legacy_manifest_matches(manifest, source_obj, alias_version, alias_sha256):
+    return bool(
+        isinstance(manifest, dict)
+        and manifest.get("status") in {"ok", "no_matches"}
+        and manifest.get("source_key") == source_obj.get("Key")
+        and manifest.get("alias_config_version") == alias_version
+        and manifest.get("alias_config_sha256") == alias_sha256
+    )
+
+
 def main():
     alias_path = os.getenv(
         "EDINET_FINANCIAL_ALIASES", "config/financial_metric_elements.json"
@@ -289,141 +403,183 @@ def main():
     alias_map = alias_config["aliases"]
     alias_version = alias_config["version"]
     alias_sha256 = alias_config["sha256"]
-    s3 = client()
+
+    budget = int(os.getenv("EDINET_FINANCIAL_MAX_DOCS_PER_RUN", "150"))
+    if not 1 <= budget <= 2000:
+        raise ValueError("EDINET_FINANCIAL_MAX_DOCS_PER_RUN must be 1..2000")
+    meter = B2CallCounter()
+    s3 = meter.attach(client())
     bucket = env("B2_BUCKET_NAME")
     now = datetime.now(timezone.utc)
     run_id = f"{now:%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
 
     processed = skipped = failed = rows_written = 0
-    empty_docs = 0
+    empty_docs = checked_legacy = pending = 0
     errors = []
+    index = None
+    dirty = 0
 
-    for source_key in list_parquet_keys(s3, bucket, SOURCE_PREFIX):
-        doc_id = source_key.rsplit("/", 1)[-1].removesuffix(".parquet")
-        manifest_key = f"{MANIFEST_PREFIX}doc_id={doc_id}.json"
-        existing = get_json(s3, bucket, manifest_key)
-        alias_config_matches = (
-            existing
-            and existing.get("alias_config_version") == alias_version
-            and existing.get("alias_config_sha256") == alias_sha256
+    def flush_index():
+        nonlocal dirty
+        if dirty:
+            put_json(s3, bucket, INDEX_KEY, index)
+            dirty = 0
+
+    try:
+        index = load_financial_index(s3, bucket)
+        manifest_ids = list_existing_financial_manifest_ids(s3, bucket)
+        # Newest filing dates first: prevent the legacy migration backlog from
+        # blocking fresh filings. Bound BOTH legacy lookups and re-normalizations.
+        sources = sorted(
+            list_financial_source_objects(s3, bucket),
+            key=lambda obj: obj["Key"],
+            reverse=True,
         )
-        if (
-            existing
-            and existing.get("status") in {"ok", "no_matches"}
-            and alias_config_matches
-        ):
-            skipped += 1
-            continue
+        for source_obj in sources:
+            source_key = source_obj["Key"]
+            doc_id = source_key.rsplit("/", 1)[-1].removesuffix(".parquet")
+            existing_index = index["entries"].get(doc_id)
+            if financial_index_matches(
+                existing_index, source_obj, alias_version, alias_sha256
+            ):
+                skipped += 1
+                continue
 
-        try:
-            frame = read_parquet(s3, bucket, source_key)
-            out = transform(frame, source_key, alias_map, run_id)
-            submit = first(frame, "submit_datetime")
-            submit_date = submit[:10] if submit else "unknown"
-            if out.empty:
-                put_json(
-                    s3,
-                    bucket,
-                    manifest_key,
-                    {
-                        "status": "no_matches",
+            if checked_legacy + processed + empty_docs + failed >= budget:
+                pending += 1
+                continue
+
+            # Unindexed legacy documents require at most ONE GET each.
+            # A missing manifest is known from LIST and needs no 404 GET.
+            existing = None
+            if existing_index is None and doc_id in manifest_ids:
+                existing = get_json(s3, bucket, f"{MANIFEST_PREFIX}doc_id={doc_id}.json")
+                checked_legacy += 1
+                if financial_legacy_manifest_matches(
+                    existing, source_obj, alias_version, alias_sha256
+                ):
+                    index["entries"][doc_id] = financial_index_entry(
+                        source_obj, existing["status"], alias_version, alias_sha256
+                    )
+                    skipped += 1
+                    dirty += 1
+                    if dirty >= 25:
+                        flush_index()
+                    continue
+
+            try:
+                frame = read_parquet(s3, bucket, source_key)
+                out = transform(frame, source_key, alias_map, run_id)
+                submit = first(frame, "submit_datetime")
+                submit_date = submit[:10] if submit else "unknown"
+                manifest_key = f"{MANIFEST_PREFIX}doc_id={doc_id}.json"
+                status = "no_matches" if out.empty else "ok"
+                if out.empty:
+                    manifest = {
+                        "status": status,
                         "doc_id": doc_id,
                         "source_key": source_key,
                         "alias_config_version": alias_version,
                         "alias_config_sha256": alias_sha256,
                         "observed_at": now.isoformat().replace("+00:00", "Z"),
                         "ingestion_run_id": run_id,
-                    },
+                    }
+                    empty_docs += 1
+                else:
+                    output_key = f"{OUTPUT_PREFIX}submit_date={submit_date}/{doc_id}.parquet"
+                    put_parquet(s3, bucket, output_key, out)
+                    manifest = {
+                        "status": status,
+                        "doc_id": doc_id,
+                        "source_key": source_key,
+                        "output_key": output_key,
+                        "rows": len(out),
+                        "metrics": sorted(out["metric"].unique().tolist()),
+                        "alias_config_version": alias_version,
+                        "alias_config_sha256": alias_sha256,
+                        "observed_at": now.isoformat().replace("+00:00", "Z"),
+                        "ingestion_run_id": run_id,
+                    }
+                    processed += 1
+                    rows_written += len(out)
+
+                # Commit the per-doc manifest before adding it to the shared index.
+                put_json(s3, bucket, manifest_key, manifest)
+                index["entries"][doc_id] = financial_index_entry(
+                    source_obj, status, alias_version, alias_sha256
                 )
-                empty_docs += 1
-                continue
+                dirty += 1
+                if dirty >= 25:
+                    flush_index()
+            except ClientError as exc:
+                if is_b2_cap_exceeded(exc):
+                    raise
+                failed += 1
+                errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
+                put_json(
+                    s3, bucket, f"{MANIFEST_PREFIX}errors/doc_id={doc_id}/{run_id}.json",
+                    {"status": "error", "doc_id": doc_id, "source_key": source_key,
+                     "error": str(exc)[:1000],
+                     "alias_config_version": alias_version,
+                     "alias_config_sha256": alias_sha256,
+                     "ingestion_run_id": run_id},
+                )
+            except Exception as exc:
+                failed += 1
+                errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
+                put_json(
+                    s3, bucket, f"{MANIFEST_PREFIX}errors/doc_id={doc_id}/{run_id}.json",
+                    {"status": "error", "doc_id": doc_id, "source_key": source_key,
+                     "error": str(exc)[:1000],
+                     "alias_config_version": alias_version,
+                     "alias_config_sha256": alias_sha256,
+                     "ingestion_run_id": run_id},
+                )
 
-            output_key = (
-                f"{OUTPUT_PREFIX}submit_date={submit_date}/{doc_id}.parquet"
-            )
-            put_parquet(s3, bucket, output_key, out)
-            put_json(
-                s3,
-                bucket,
-                manifest_key,
-                {
-                    "status": "ok",
-                    "doc_id": doc_id,
-                    "source_key": source_key,
-                    "output_key": output_key,
-                    "rows": len(out),
-                    "metrics": sorted(out["metric"].unique().tolist()),
-                    "alias_config_version": alias_version,
-                    "alias_config_sha256": alias_sha256,
-                    "observed_at": now.isoformat().replace("+00:00", "Z"),
-                    "ingestion_run_id": run_id,
-                },
-            )
-            processed += 1
-            rows_written += len(out)
-        except ClientError as exc:
-            if is_b2_cap_exceeded(exc):
-                raise
-            failed += 1
-            errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
-            put_json(
-                s3,
-                bucket,
-                f"{MANIFEST_PREFIX}errors/doc_id={doc_id}/{run_id}.json",
-                {
-                    "status": "error",
-                    "doc_id": doc_id,
-                    "source_key": source_key,
-                    "error": str(exc)[:1000],
-                    "alias_config_version": alias_version,
-                    "alias_config_sha256": alias_sha256,
-                    "ingestion_run_id": run_id,
-                },
-            )
-        except Exception as exc:
-            failed += 1
-            errors.append({"doc_id": doc_id, "error": str(exc)[:500]})
-            put_json(
-                s3,
-                bucket,
-                f"{MANIFEST_PREFIX}errors/doc_id={doc_id}/{run_id}.json",
-                {
-                    "status": "error",
-                    "doc_id": doc_id,
-                    "source_key": source_key,
-                    "error": str(exc)[:1000],
-                    "alias_config_version": alias_version,
-                    "alias_config_sha256": alias_sha256,
-                    "ingestion_run_id": run_id,
-                },
-            )
-
-    manifest = {
-        "source_id": "edinet_api_v2",
-        "dataset": "financial_metrics",
-        "run_id": run_id,
-        "alias_config_version": alias_version,
-        "alias_config_sha256": alias_sha256,
-        "observed_at": now.isoformat().replace("+00:00", "Z"),
-        "processed_documents": processed,
-        "skipped_documents": skipped,
-        "no_match_documents": empty_docs,
-        "failed_documents": failed,
-        "rows_written": rows_written,
-        "errors": errors,
-    }
-    put_json(
-        s3,
-        bucket,
-        (
+        flush_index()
+        manifest = {
+            "source_id": "edinet_api_v2",
+            "dataset": "financial_metrics",
+            "run_id": run_id,
+            "alias_config_version": alias_version,
+            "alias_config_sha256": alias_sha256,
+            "observed_at": now.isoformat().replace("+00:00", "Z"),
+            "processed_documents": processed,
+            "skipped_documents": skipped,
+            "no_match_documents": empty_docs,
+            "failed_documents": failed,
+            "rows_written": rows_written,
+            "legacy_manifest_gets": checked_legacy,
+            "pending_documents": pending,
+            "max_documents_per_run": budget,
+            "b2_api_calls": meter.snapshot(),
+            "errors": errors,
+        }
+        put_json(
+            s3, bucket,
             f"metadata/edinet/financial_metric_runs/year={now:%Y}/month={now:%m}/"
-            f"day={now:%d}/{run_id}.json"
-        ),
-        manifest,
-    )
-    print(json.dumps(manifest, ensure_ascii=False, indent=2))
-    if failed and not processed and not empty_docs:
-        raise RuntimeError("All unprocessed financial documents failed")
+            f"day={now:%d}/{run_id}.json",
+            manifest,
+        )
+        manifest["b2_api_calls"] = meter.snapshot()
+        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        if failed and not processed and not empty_docs:
+            raise RuntimeError("All unprocessed financial documents failed")
+    finally:
+        # Keep migration checkpoints even after a Class B cap pause; index
+        # updates are writes, not Class B downloads. Never hide the original
+        # B2 error when checkpointing itself fails.
+        try:
+            if index is not None:
+                flush_index()
+        finally:
+            print(json.dumps({
+                "event": "b2_api_usage",
+                "workflow": "normalize_edinet_financial",
+                "calls": meter.snapshot(),
+                "legacy_manifest_gets": checked_legacy,
+                "pending_documents": pending,
+            }, ensure_ascii=False))
 
 
 if __name__ == "__main__":
