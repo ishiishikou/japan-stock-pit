@@ -12,8 +12,8 @@ on:
         required: false
         default: "150"
   schedule:
-    # 12:20 and 19:20 JST. Repeated lookback + per-doc manifests make runs idempotent.
-    - cron: "20 3,10 * * *"
+    # Once daily at 12:20 JST; seven-day lookback preserves catch-up.
+    - cron: "20 3 * * *"
   push:
     branches:
       - main
