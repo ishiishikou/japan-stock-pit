@@ -3,8 +3,8 @@ name: Backfill EDINET Historical PIT
 on:
   workflow_dispatch:
   schedule:
-    # Twice daily, away from the current-data package collection windows.
-    - cron: "10 5,17 * * *"
+    # Once daily at 14:10 JST while Backblaze Class B cap is constrained.
+    - cron: "10 5 * * *"
   push:
     branches:
       - main
