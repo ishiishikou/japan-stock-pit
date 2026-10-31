@@ -61,15 +61,22 @@ def run_financial(monkeypatch, fake, alias_sha="sha-v5", budget=150):
     monkeypatch.setattr(financial, "load_alias_config", lambda path: {
         "aliases": {}, "version": 5, "sha256": alias_sha,
     })
-    monkeypatch.setattr(financial, "read_parquet", lambda *args: pd.DataFrame())
+    def simulated_read_parquet(s3, bucket, key):
+        # Parquet contents are irrelevant for this test, but its GET is not.
+        s3.meta.events.emit("GetObject")
+        return pd.DataFrame()
+
+    monkeypatch.setattr(financial, "read_parquet", simulated_read_parquet)
     monkeypatch.setattr(financial, "transform", lambda *args: pd.DataFrame())
     monkeypatch.setenv("EDINET_FINANCIAL_MAX_DOCS_PER_RUN", str(budget))
     financial.main()
 
 
-def test_financial_index_avoids_repeated_gets_after_bounded_migration(monkeypatch):
+def test_financial_index_avoids_repeated_gets_after_bounded_migration(monkeypatch, capsys):
     s3 = FakeS3()
     run_financial(monkeypatch, s3)
+    first_report = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert first_report["calls"]["GetObject"] == 3  # 2 legacy + 1 source
     index = json.loads(s3.content[financial.INDEX_KEY])
     assert set(index["entries"]) == {"A", "B", "C"}
     assert index["entries"]["C"]["status"] == "no_matches"
@@ -78,6 +85,9 @@ def test_financial_index_avoids_repeated_gets_after_bounded_migration(monkeypatc
     fresh = FakeS3()
     fresh.content = dict(s3.content)
     run_financial(monkeypatch, fresh)
+    second_report = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert second_report["calls"]["GetObject"] == 1  # index only
+    assert second_report["legacy_manifest_gets"] == 0
     # Second run uses exactly one GET for the consolidated index.
     # It must not read ANY per-doc manifests or source Parquet files.
     meter = financial.B2CallCounter()
